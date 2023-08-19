@@ -25,7 +25,7 @@ def get_k_local_basis(num_qubits, k):
 
 
 def get_hamiltonian_terms(num_qubits, H):
-    gate_name = {'PauliX':'X', 'PauliY':'Y', 'PauliZ':'Z', 'I':'I'}
+    gate_name = {'PauliX':'X', 'PauliY':'Y', 'PauliZ':'Z', 'I':'I', 'Identity':'I'}
 
     assert isinstance(H, qml.Hamiltonian)
 
@@ -93,7 +93,7 @@ def get_cov_terms(num_qubits, H=None, terms_str=None, coeffs=None):
     return cov_terms_str, phases, cov_coeffs
 
 
-def get_meas_outcomes(meas_str, ansatz_kwargs, theta, dev=None):
+def get_meas_outcomes(meas_str, ansatz_kwargs, theta, dev=None, H=None, H_mixer=None):
     # locals().update(ansatz_kwargs)
     # sys._getframe(1).f_locals.update(ansatz_kwargs)
     # print(set(locals()))
@@ -102,21 +102,29 @@ def get_meas_outcomes(meas_str, ansatz_kwargs, theta, dev=None):
     num_qubits = ansatz_kwargs['num_qubits']
     num_layers = ansatz_kwargs['num_layers']
     ansatz_gen = ansatz_kwargs['ansatz_gen']
+    if ansatz_gen == 'QAOAAnsatz':
+        assert H is not None
+        assert H_mixer is not None
 
     wire_map = dict(zip(range(num_qubits), range(num_qubits)))
     meas_terms = [qml.pauli.string_to_pauli_word(pauli_str, wire_map) for pauli_str in meas_str]
-
+    
     if not dev:
-        dev = qml.device('default.qubit', wires=num_qubits+1)
+        dev = qml.device('default.qubit', wires=num_qubits)
 
     ansatz_obj = getattr(AnsatzGenerator,ansatz_gen)(num_qubits, num_layers)
 
-    @qml.qnode(dev, interface='autograd')
-    def circuit(theta):
-        ansatz_obj.get_ansatz(theta)
+    @qml.qnode(dev, interface='autograd', diff_method='best')
+    def circuit(theta, H=None, H_mixer=None):
+        gamma = theta[:ansatz_obj.num_layers]
+        beta = theta[ansatz_obj.num_layers:]
+        ansatz_obj.get_ansatz(gamma, beta, H, H_mixer)
         return [qml.expval(term) for term in meas_terms]
     
-    meas_outcomes = circuit(theta)
+    if ansatz_gen != 'QAOAAnsatz':
+        meas_outcomes = circuit(theta)
+    else:
+        meas_outcomes = circuit(theta, H, H_mixer)
     meas_dict = dict(zip(meas_str, meas_outcomes))
     return meas_dict
 

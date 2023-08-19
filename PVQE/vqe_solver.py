@@ -2,7 +2,7 @@ import pennylane as qml
 import pennylane.numpy as np
 from scipy.integrate import solve_ivp, odeint
 
-import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryVQE, VQELocalApproximator
+import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryVQE, LocalApproximator
 import helper
 
 import itertools
@@ -45,9 +45,10 @@ meas_str = list(meas_str)
 num_parameters = AnsatzGenerator.SimpleAnsatz(num_qubits, num_layers).num_parameters
 
 ## Prepare for first iteration
+theta_approximator = LocalApproximator.VQEApproximator(num_qubits, start_ansatz_kwargs['num_layers'],
+                                                       start_ansatz_kwargs['ansatz_gen'], dev=None)
 num_iterations = 1000
-diff_to_H_lst = []
-diff_to_prev_lst = []
+training_record = {'dist-to-H':[], 'dist-to-prev': []}
 
 
 prev_w = np.zeros(len(L_list), dtype=float)
@@ -57,22 +58,18 @@ for i,L_str in enumerate(L_list):
     else:
         prev_w[i] = 0
 
-num_converges = 0
-diff_to_H = 1
-diff_to_prev = 4
-diff_to_H_lst.append(diff_to_H)
-diff_to_prev_lst.append(diff_to_prev)
 
 ## Iterates...
 for it in range(num_iterations):
     print('Iteration: ', it+1)
-    # Hp = dict(zip(L_list, prev_w))
-    # Hp_op = SparsePauliOp(L_list, prev_w)
+
+    if it == 1:
+        theta_approximator = LocalApproximator.VQEApproximator(num_qubits, ansatz_kwargs['num_layers'], 
+                                                               ansatz_kwargs['ansatz_gen'], dev=None)
+
     print(prev_w)
     H_it = qml.Hamiltonian(prev_w, L_terms)
 
-    
-    
     if it == 0:
         #res = VQE_numerical_solver(Hp_op, start_ansatz, num_ortho_init_states=1)
         history = OrdinaryVQE.train_vqe(H_it, start_ansatz_kwargs, stepsize=0.1)
@@ -81,7 +78,9 @@ for it in range(num_iterations):
         ground_theta = np.concatenate((start_ground_theta, np.zeros(num_parameters - len(start_ground_theta))))
 
     else:
-        approx_ground_theta = VQELocalApproximator.update_approximator(ansatz_kwargs, H_prev, H_it, theta_opt_prev=ground_theta, theta_init_curr=ground_theta)
+        # approx_ground_theta = LocalApproximator.update_approximator(ansatz_kwargs, H_prev, H_it, theta_opt_prev=ground_theta, theta_init_curr=ground_theta)
+        approx_ground_theta = theta_approximator.update(H_prev, H_it, theta_opt_prev=ground_theta, theta_init_curr=ground_theta)
+
         history = OrdinaryVQE.train_vqe(H_it, ansatz_kwargs, ground_theta)
         approx_history = OrdinaryVQE.train_vqe(H_it, ansatz_kwargs, approx_ground_theta)
         energy = history['energy'][-1]
@@ -98,6 +97,8 @@ for it in range(num_iterations):
             ground_energy = approx_energy
             ground_theta = approx_history['theta'][-1]           
 
+        # ground_energy = history['energy'][-1]
+        # ground_theta = history['theta'][-1]
     print('True Ground Energy: ', helper.true_ground_state_energy(H_it))
     print('Est Ground Energy: ', ground_energy)
     
@@ -107,37 +108,29 @@ for it in range(num_iterations):
     ## Choose the firing direction == lowest eigenvector
     eigvals, eigvecs = np.linalg.eigh(M)
     nullspace = eigvecs[:,0]
-    #print("Measurements:", meas_dict)
-    #print("Covariance:", M)
     print('Nullspace: ', np.round(nullspace[:2], 3))
-    
-    if nullspace @ (H_coeffs - prev_w) >= 0:
-        direction = nullspace.flatten()
-    else:
-        direction = -nullspace.flatten()
-        
-    
-    GravityODE.converge_cond.terminal = True
-    GravityODE.converge_cond.direction = -1
-    GravityODE.deviation_bound.terminal = True
-    GravityODE.deviation_bound.direction = -1
 
-    # solve ODE
-    t_span = [0, 10]
-    mass= 1
-    init_spd = 1
-    z0 = np.concatenate((prev_w, init_spd * direction))
-    sol = solve_ivp(GravityODE.ode, t_span, z0, events=(GravityODE.converge_cond, GravityODE.deviation_bound), 
-                    max_step=0.01, args=(H_coeffs, mass, prev_w, nullspace))
 
-    z = sol.y[:,-1]
-    w = z[:len(z)//2]
+    # Set attribute for ODE Solver at the class level
+    GravityODE.FirstOrderAttraction.converge_cond.terminal = True
+    GravityODE.FirstOrderAttraction.converge_cond.direction = -1
+    GravityODE.FirstOrderAttraction.deviation_bound.terminal = True
+    GravityODE.FirstOrderAttraction.deviation_bound.direction = -1
+
+    ## ODE solver
+    ode_solver = GravityODE.FirstOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
+    w = ode_solver.solve_ivp(init_z=prev_w, nullspace=nullspace, prev_w=prev_w, time_step=0.05)
+
+    #ode_solver = GravityODE.SecondOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
+    #w = ode_solver.solve_ivp(init_z=prev_w, nullspace=nullspace, prev_w=prev_w, time_step=0.05)
     
     null_deviation = np.linalg.norm(M @ w)
     diff_to_H = np.linalg.norm(w - H_coeffs)
     diff_to_prev = np.linalg.norm(w - prev_w)
-#     diff_to_H_lst.append(diff_to_H)
-#     diff_to_prev_lst.append(diff_to_prev)
+
+    ## Update record
+    training_record['dist-to-H'].append(diff_to_H)
+    training_record['dist-to-prev'].append(diff_to_prev)
     
     print('Prev w: ', prev_w[:3])
     print('Current w:', w[:3])
