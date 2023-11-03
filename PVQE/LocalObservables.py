@@ -116,9 +116,12 @@ def get_meas_outcomes(meas_str, ansatz_kwargs, theta, dev=None, H=None, H_mixer=
 
     @qml.qnode(dev, interface='autograd', diff_method='best')
     def circuit(theta, H=None, H_mixer=None):
-        gamma = theta[:ansatz_obj.num_layers]
-        beta = theta[ansatz_obj.num_layers:]
-        ansatz_obj.get_ansatz(gamma, beta, H, H_mixer)
+        if ansatz_gen == 'QAOAAnsatz':
+            gamma = theta[:ansatz_obj.num_layers]
+            beta = theta[ansatz_obj.num_layers:]
+            ansatz_obj.get_ansatz(gamma, beta, H, H_mixer)
+        else:
+            ansatz_obj.get_ansatz(theta)
         return [qml.expval(term) for term in meas_terms]
     
     if ansatz_gen != 'QAOAAnsatz':

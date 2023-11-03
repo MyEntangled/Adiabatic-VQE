@@ -2,7 +2,7 @@ import pennylane as qml
 import pennylane.numpy as np
 from scipy.integrate import solve_ivp, odeint
 
-import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryVQE, LocalApproximator
+import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryVQE, LocalApproximator, AreaSearch
 import helper
 
 import itertools
@@ -52,6 +52,8 @@ training_record = {'dist-to-H':[], 'dist-to-prev': []}
 
 
 prev_w = np.zeros(len(L_list), dtype=float)
+prev_w[0] = 1.
+
 for i,L_str in enumerate(L_list):
     if L_str in L_1q_list:
         prev_w[i] = H_coeffs[i]
@@ -60,6 +62,10 @@ for i,L_str in enumerate(L_list):
 
 
 ## Iterates...
+#ode_solver = GravityODE.FirstOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
+#ode_solver = GravityODE.SecondOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
+area_searcher = AreaSearch.TriangleSearch(num_qubits, obs)
+
 for it in range(num_iterations):
     print('Iteration: ', it+1)
 
@@ -118,11 +124,10 @@ for it in range(num_iterations):
     GravityODE.FirstOrderAttraction.deviation_bound.direction = -1
 
     ## ODE solver
-    ode_solver = GravityODE.FirstOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
-    w = ode_solver.solve_ivp(init_z=prev_w, nullspace=nullspace, prev_w=prev_w, time_step=0.05)
-
-    #ode_solver = GravityODE.SecondOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
     #w = ode_solver.solve_ivp(init_z=prev_w, nullspace=nullspace, prev_w=prev_w, time_step=0.05)
+
+    ## Area Search
+    w = area_searcher.meanfield_spectral_max(w0 = prev_w, w1 = nullspace, w2 = H_coeffs, radius = min(0.1, np.linalg.norm(prev_w - H_coeffs)))
     
     null_deviation = np.linalg.norm(M @ w)
     diff_to_H = np.linalg.norm(w - H_coeffs)
