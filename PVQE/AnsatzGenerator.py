@@ -14,7 +14,7 @@ class SimpleAnsatz:
             for i in self.wires:
                 qml.RX(next(iter_theta), wires=i)
             for i in self.wires:
-                qml.RX(next(iter_theta), wires=i)
+                qml.RY(next(iter_theta), wires=i)
             for i in self.wires:
                 qml.CRZ(next(iter_theta), wires=[i,(i+1)%self.num_qubits])
 

@@ -2,7 +2,7 @@ import pennylane as qml
 import pennylane.numpy as np
 from scipy.integrate import solve_ivp, odeint
 
-import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryQAOA, LocalApproximator
+import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryQAOA, PVQE.InitialParameters as InitialParameters
 import helper
 
 import itertools
@@ -47,7 +47,7 @@ meas_str = list(meas_str)
 num_parameters = AnsatzGenerator.QAOAAnsatz(num_qubits, num_layers).num_parameters
 
 ## Prepare for first iteration
-theta_approximator = LocalApproximator.QAOAApproximator(num_qubits, start_ansatz_kwargs['num_layers'],
+theta_approximator = InitialParameters.QAOAApproximator(num_qubits, start_ansatz_kwargs['num_layers'],
                                                        start_ansatz_kwargs['ansatz_gen'], H_mixer, dev=None)
 
 num_iterations = 1000
@@ -72,7 +72,7 @@ for it in range(num_iterations):
     print('Iteration: ', it+1)
 
     if it == 1:
-        theta_approximator = LocalApproximator.QAOAApproximator(num_qubits, ansatz_kwargs['num_layers'],
+        theta_approximator = InitialParameters.QAOAApproximator(num_qubits, ansatz_kwargs['num_layers'],
                                                                 ansatz_kwargs['ansatz_gen'], dev=None, H_mixer=H_mixer)
         
     H_it = qml.Hamiltonian(prev_w, L_terms)

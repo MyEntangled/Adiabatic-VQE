@@ -1,8 +1,9 @@
 import pennylane as qml
 import pennylane.numpy as np
+import numpy.random as random
 from scipy.integrate import solve_ivp, odeint
 
-import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryVQE, LocalApproximator, AreaSearch
+import AnsatzGenerator, LocalObservables, GravityODE, OrdinaryVQE, PVQE.InitialParameters as InitialParameters, PVQE.MaxMFGapSearch as MaxMFGapSearch
 import helper
 
 import itertools
@@ -13,19 +14,18 @@ num_layers = 3
 full_basis = LocalObservables.get_k_local_basis(num_qubits, 3)
 num_terms = len(full_basis) // 10
 
-#coeffs = np.array([0.2, -0.543, 0.3])
 coeffs = np.random.rand(num_terms)
-
 norm = np.linalg.norm(coeffs)
 coeffs = coeffs / norm
 
-#obs = [qml.PauliX(0) @ qml.PauliZ(1), qml.PauliZ(0) @ qml.PauliY(2),  qml.PauliX(1)]
-terms_str = np.random.choice(full_basis, size=num_terms, replace=False)
-obs = [qml.pauli.string_to_pauli_word(str(each)) for each in terms_str]
+pauli_strings = random.choice(full_basis, size=num_terms, replace=False)
+print(pauli_strings)
+pauli_terms = [qml.pauli.string_to_pauli_word(str(each)) for each in pauli_strings]
+print(pauli_terms)
 
-H = qml.Hamiltonian(coeffs, obs)
+H = qml.Hamiltonian(coeffs, pauli_terms)
 L_list, H_coeffs = LocalObservables.get_hamiltonian_terms(num_qubits, H)
-L_terms = H.ops
+# L_terms = H.ops
 print("Pauli terms: ", L_list)
 print("Coeffs:", H_coeffs)
 print("Ground state energy = ", helper.true_ground_state_energy(H))
@@ -44,8 +44,8 @@ meas_str = list(meas_str)
 
 num_parameters = AnsatzGenerator.SimpleAnsatz(num_qubits, num_layers).num_parameters
 
-## Prepare for first iteration
-theta_approximator = LocalApproximator.VQEApproximator(num_qubits, start_ansatz_kwargs['num_layers'],
+## Prepare the first iteration
+theta_approximator = InitialParameters.VQEApproximator(num_qubits, start_ansatz_kwargs['num_layers'],
                                                        start_ansatz_kwargs['ansatz_gen'], dev=None)
 num_iterations = 1000
 training_record = {'dist-to-H':[], 'dist-to-prev': []}
@@ -64,17 +64,17 @@ for i,L_str in enumerate(L_list):
 ## Iterates...
 #ode_solver = GravityODE.FirstOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
 #ode_solver = GravityODE.SecondOrderAttraction(t_span=[0,10], H_coeffs=H_coeffs)
-area_searcher = AreaSearch.TriangleSearch(num_qubits, obs)
+area_searcher = MaxMFGapSearch.TriangleSearch(num_qubits, pauli_terms)
 
 for it in range(num_iterations):
     print('Iteration: ', it+1)
 
     if it == 1:
-        theta_approximator = LocalApproximator.VQEApproximator(num_qubits, ansatz_kwargs['num_layers'], 
+        theta_approximator = InitialParameters.VQEApproximator(num_qubits, ansatz_kwargs['num_layers'], 
                                                                ansatz_kwargs['ansatz_gen'], dev=None)
 
     print(prev_w)
-    H_it = qml.Hamiltonian(prev_w, L_terms)
+    H_it = qml.Hamiltonian(prev_w, pauli_terms)
 
     if it == 0:
         #res = VQE_numerical_solver(Hp_op, start_ansatz, num_ortho_init_states=1)
@@ -117,12 +117,11 @@ for it in range(num_iterations):
     print('Nullspace: ', np.round(nullspace[:2], 3))
 
 
-    # Set attribute for ODE Solver at the class level
-    GravityODE.FirstOrderAttraction.converge_cond.terminal = True
-    GravityODE.FirstOrderAttraction.converge_cond.direction = -1
-    GravityODE.FirstOrderAttraction.deviation_bound.terminal = True
-    GravityODE.FirstOrderAttraction.deviation_bound.direction = -1
-
+    # # Set attribute for ODE Solver at the class level
+    # GravityODE.FirstOrderAttraction.converge_cond.terminal = True
+    # GravityODE.FirstOrderAttraction.converge_cond.direction = -1
+    # GravityODE.FirstOrderAttraction.deviation_bound.terminal = True
+    # GravityODE.FirstOrderAttraction.deviation_bound.direction = -1
     ## ODE solver
     #w = ode_solver.solve_ivp(init_z=prev_w, nullspace=nullspace, prev_w=prev_w, time_step=0.05)
 

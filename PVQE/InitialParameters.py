@@ -32,6 +32,10 @@ class VQEApproximator:
 
         return theta_opt_curr
 
+class VQE_Param_Modifier:
+    def __init__(self) -> None:
+        pass
+
 class QAOAApproximator:
     def __init__(self, num_qubits, num_layers, ansatz_gen, H_mixer, dev=None) -> None:
         self.num_qubits = num_qubits

@@ -52,30 +52,74 @@ def get_hamiltonian_terms(num_qubits, H):
 
     return terms_str, coeffs
 
+def get_new_terms(pauli_strings):
+    ## A,B: 2 Pauli strings
+    ## AB+BA = 2AB if they are different at an even number of non-identity Pauli operators
+    ## Otherwise AB+BA = 0
+    prod_dict = {('X','Y'): ('Z', 1j), ('Y','X'): ('Z', -1j),
+                 ('Y','Z'): ('X', 1j), ('Z','Y'): ('X', -1j),
+                 ('Z','X'): ('Y', 1j), ('X','Z'): ('Y', -1j)}
+    def anticommutator(A,B):
+        prod_string = []
+        coeff = 1
+        count = 0
+        for i in range(len(A)):
+            if A[i] == 'I':
+                prod_string.append(B[i])
+            elif B[i] == 'I':
+                prod_string.append(A[i])
+            elif A[i] == B[i]:
+                prod_string.append('I')
+            else:
+                count += 1
+                prod, c = prod_dict[(A[i],B[i])]
+                prod_string.append(prod)
+                coeff = coeff * c
 
-def get_cov_terms(num_qubits, H=None, terms_str=None, coeffs=None):
+        if count % 2 == 1:
+            return (None, 0)
+        else:
+            return (''.join(prod_string), 2*np.real(coeff)) ## the final coeff is always real.
+    #--------------
+
+    num_terms = len(pauli_strings)
+    prod_strings = []
+    prod_coeffs = []
+    new_measure_strings = []
+
+    for i in range(num_terms):
+        strings = []
+        coeffs = []
+        for j in range(i+1, num_terms):
+            anti_term, coeff = anticommutator(pauli_strings[i], pauli_strings[j])
+            strings.append(anti_term)
+            coeffs.append(coeff)
+            if anti_term is not None:
+                new_measure_strings.append(anti_term)
+
+        prod_strings.append(strings)
+        prod_coeffs.append(coeffs)
+    return prod_strings, prod_coeffs, new_measure_strings
+
+def get_cov_terms(num_qubits, H=None, pauli_strings=None, pauli_terms=None, coeffs=None):
     if H:
-        terms_str, coeffs = get_hamiltonian_terms(num_qubits, H)
-    elif terms_str and coeffs:
+        pauli_strings, coeffs = get_hamiltonian_terms(num_qubits, H)
+        pauli_terms = H.ops
+    elif pauli_strings is not None and coeffs is not None:
         pass
     else:
         print('Please provide either Hamiltonian or Pauli terms and coefficients')
 
-    # print("Hamiltonian", H)
-    # print("terms_str", terms_str)
-    terms_lst = H.ops
-    # print("terms_lst", terms_lst)
-
     cov_terms_str = []
     phases = []
-    num_terms = len(terms_lst)
+    num_terms = len(pauli_terms)
 
     for i in range(num_terms):
         cov_temp = []
         phase_temp = []
         for j in range(num_terms):
             if j != i:
-                cov, phase = qml.pauli.pauli_mult_with_phase(terms_lst[i], terms_lst[j])
+                cov, phase = qml.pauli.pauli_mult_with_phase(pauli_terms[i], pauli_terms[j])
                 cov_str, phase = get_hamiltonian_terms(num_qubits, qml.Hamiltonian([phase], [cov]))
                 cov_str = cov_str[0]
                 phase = phase[0]
@@ -91,7 +135,6 @@ def get_cov_terms(num_qubits, H=None, terms_str=None, coeffs=None):
 
     cov_coeffs = np.outer(coeffs, coeffs)
     return cov_terms_str, phases, cov_coeffs
-
 
 def get_meas_outcomes(meas_str, ansatz_kwargs, theta, dev=None, H=None, H_mixer=None):
     # locals().update(ansatz_kwargs)
@@ -131,37 +174,65 @@ def get_meas_outcomes(meas_str, ansatz_kwargs, theta, dev=None, H=None, H_mixer=
     meas_dict = dict(zip(meas_str, meas_outcomes))
     return meas_dict
 
+def compute_M(meas_dict, pauli_strings, prod_strings, prod_coeffs):
+    num_terms = len(pauli_strings)
 
-def compute_correlation_matrix(meas_dict, exp_terms_str, cov_terms_str, cov_phases, is_weighted=None, cov_coeffs=None):
-    num_terms = len(cov_terms_str)
+    M_anticomm = np.zeros((num_terms, num_terms))
+    for i in range(num_terms):
+        strings = prod_strings[i]
+        coeffs = prod_coeffs[i]
+        for pos, j in enumerate(range(i+1,num_terms)):
+            anti_string = strings[pos]
+            coeff = coeffs[pos]
+            if anti_string is None:
+                M_anticomm[i,j] = 0
+            else:
+                M_anticomm[i,j] = coeff * meas_dict[anti_string]
+    M_anticomm = M_anticomm + M_anticomm.T
+    np.fill_diagonal(M_anticomm, 2.)
 
-    exp_lst = np.array([meas_dict[exp_str] for exp_str in exp_terms_str])
+    expvals = np.array([meas_dict[string] for string in pauli_strings])
+    M_exp = np.outer(expvals, expvals)
+    # print(expvals)
+    # print(M_anticomm)
+    # print(M_exp)
+    M = (1./2) * M_anticomm - M_exp
+    return M
+
+
+def compute_correlation_matrix(meas_dict, pauli_strings, product_strings, product_phases, is_weighted=None, product_coeffs=None):
+    num_terms = len(product_strings)
+
+    exp_lst = np.array([meas_dict[exp_str] for exp_str in pauli_strings])
 
     cross_prod_mat = np.zeros((num_terms, num_terms))
     for i in range(num_terms):
         for j in range(num_terms):
             if i < j:
-                temp = (meas_dict[cov_terms_str[i][j]] * cov_phases[i][j] + meas_dict[cov_terms_str[j][i]] * cov_phases[j][i]) / 2.
-                assert np.imag(temp) == 0
+                temp = (meas_dict[product_strings[i][j]] * product_phases[i][j] + meas_dict[product_strings[j][i]] * product_phases[j][i]) / 2.
                 cross_prod_mat[i,j] = np.real(temp)
             elif i > j:
                 cross_prod_mat[i,j] = cross_prod_mat[j,i]
             else:
                 cross_prod_mat[i,j] = 1
 
-    #cross_prod_mat = cross_prod_mat * np.array(cov_phases)
+    #cross_prod_mat = cross_prod_mat * np.array(product_phases)
     cov_mat = cross_prod_mat - np.outer(exp_lst, exp_lst)
 
     if not is_weighted:
+        assert(np.linalg.norm(cov_mat - (cov_mat + cov_mat.conj().T)/2.) < 1e-5)
         M = cov_mat + cov_mat.conj().T
     elif is_weighted:
-        weighted_cov_mat = cov_mat * np.array(cov_coeffs)
+        weighted_cov_mat = cov_mat * np.array(product_coeffs)
         M = weighted_cov_mat + weighted_cov_mat.conj().T
 
     return M/2.
 
 
 if __name__ == '__main__':
+    pauli_terms = ['XYZX', 'YYZX', 'YZZX','YZXX','YZXY']
+    print(get_new_terms(pauli_terms))
+
     num_qubits = 3
     coeffs = [0.2, -0.543]
     obs = [qml.PauliX(0) @ qml.PauliZ(1), qml.PauliZ(0) @ qml.PauliY(2)]
