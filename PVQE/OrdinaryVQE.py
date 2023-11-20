@@ -15,6 +15,7 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
     else:
         term_groups, coeff_groups = observable
         coeff_groups_flat = np.concatenate(coeff_groups)
+
     if not dev:
         dev = qml.device('default.qubit', wires=num_qubits+1)
     

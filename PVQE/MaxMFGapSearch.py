@@ -57,10 +57,22 @@ class Sampler:
             mf_gap = MeanFieldGap.meanfield_spectral_gap(self.num_qubits, H)
             return self.z, mf_gap, np.array([self.z])
         elif self.d1 <= dist_threshold:
-            u1 = self.x + (self.z-self.x)/15
-            u2 = self.x + (self.z-self.x)/5
-            samples = self.segment_sampling(u1,u2,num_samples,use_grid=False)
-            print('Segment')
+            # u1 = self.x + (self.z-self.x)/15
+            # u2 = self.x + (self.z-self.x)/5
+            # samples = self.segment_sampling(u1,u2,num_samples,use_grid=False)
+            # print('Segment')
+            if self.d2 <= dist_threshold:
+                print('Final sampling')
+                H = qml.Hamiltonian(self.z, self.pauli_terms)
+                mf_gap = MeanFieldGap.meanfield_spectral_gap(self.num_qubits, H)
+                return self.z, mf_gap, np.array([self.z])
+            
+            RM = dist_threshold
+            Rm = RM/2.
+            start_theta = np.arcsin(self.height/(2*self.d2)) - np.pi/2
+            end_theta = start_theta + np.pi
+            samples = self.disk_sampling(self.x, Rm, RM, start_theta, end_theta, num_samples)
+            print('Direct sampling')
         elif self.area <= area_threshold:
             # sampling in the disk (x,|x-y|)
             RM = self.d1
