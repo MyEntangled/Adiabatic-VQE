@@ -1,7 +1,12 @@
 import sys
-
 import pennylane as qml
-from pennylane import numpy as np
+import numpy as np
+#from pennylane import numpy as np
+import jax
+import jax.numpy as jnp
+from functools import partial
+import optax
+
 
 import AnsatzGenerator
 
@@ -14,19 +19,21 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
         H = observable
     else:
         term_groups, coeff_groups = observable
-        coeff_groups_flat = np.concatenate(coeff_groups)
+        coeff_groups_flat = jnp.array(np.concatenate(coeff_groups))
 
     if not dev:
         dev = qml.device('default.qubit', wires=num_qubits+1)
     
     ansatz_obj = getattr(AnsatzGenerator,ansatz_gen)(num_qubits, num_layers)
     
-    @qml.qnode(dev, interface='autograd')
+    @jax.jit
+    @qml.qnode(dev, interface='jax')
     def cost_fn_H(theta):
         ansatz_obj.get_ansatz(theta)
         return qml.expval(H)
     
-    @qml.qnode(dev, interface='autograd')
+    @jax.jit
+    @qml.qnode(dev, interface='jax')
     def cost_fn_group(theta, group):
         #print(group)
         ansatz_obj.get_ansatz(theta)
@@ -37,27 +44,34 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
         # for i, group in enumerate(term_groups):
         #     group_outcomes = cost_fn_group(theta, group)
         #     cost += np.inner(coeff_groups[i],group_outcomes)
-        outcomes = np.concatenate([cost_fn_group(theta, group) for group in term_groups])
+        group_outcomes = [jnp.array(cost_fn_group(theta, group)) for group in term_groups]
+        outcomes = jnp.concatenate(group_outcomes)
         #print(outcomes)
-        return np.inner(outcomes, coeff_groups_flat)
+        return jnp.inner(outcomes, coeff_groups_flat)
     
     if isinstance(observable, qml.Hamiltonian):
         cost_fn = cost_fn_H
     else:
         cost_fn = cost_fn_groupings
 
-    
-    opt = qml.AdamOptimizer(stepsize=stepsize)
     if init_theta is None:
-        theta = np.random.rand(ansatz_obj.num_parameters, requires_grad=True)
+        theta = jnp.array(np.random.rand(ansatz_obj.num_parameters))
+        theta.requires_grad = True
     else:
-        theta = init_theta
+        theta = jnp.array(init_theta)
         theta.requires_grad = True
         
     history = {"energy": [], "theta":[]}
 
+    #opt = qml.AdamOptimizer(stepsize=stepsize)
+    opt = optax.adam(learning_rate=stepsize)
+    opt_state = opt.init(theta)
+
     for n in range(maxiter):
-        theta, prev_energy = opt.step_and_cost(cost_fn, theta)
+        #theta, prev_energy = opt.step_and_cost(cost_fn, theta)
+        prev_energy, grad_circuit = jax.value_and_grad(cost_fn)(theta)
+        updates, opt_state = opt.update(grad_circuit, opt_state)
+        theta = optax.apply_updates(theta, updates)
         
         history['energy'].append(cost_fn(theta))
         history['theta'].append(theta)
@@ -70,7 +84,8 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
 
     return history
 
-def get_meas_outcomes(term_groups, string_groups, ansatz_kwargs, theta, dev=None):        
+def get_meas_outcomes(term_groups, string_groups, ansatz_kwargs, theta, dev=None):    
+    theta = jnp.array(theta)    
     num_qubits = ansatz_kwargs['num_qubits']
     num_layers = ansatz_kwargs['num_layers']
     ansatz_gen = ansatz_kwargs['ansatz_gen']
@@ -80,7 +95,8 @@ def get_meas_outcomes(term_groups, string_groups, ansatz_kwargs, theta, dev=None
 
     ansatz_obj = getattr(AnsatzGenerator,ansatz_gen)(num_qubits, num_layers)
 
-    @qml.qnode(dev, interface='autograd', diff_method='best')
+    @jax.jit
+    @qml.qnode(dev, interface='jax')
     def circuit(theta, group=None):
         ansatz_obj.get_ansatz(theta)
         return [qml.expval(o) for o in group]
@@ -101,7 +117,7 @@ if __name__ == '__main__':
     print(H.ops)
     ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':2, 'num_layers':3}
     record = train_vqe(H, ansatz_kwargs, maxiter=1000)
-    print(record)
+    #print(record)
 
 
 

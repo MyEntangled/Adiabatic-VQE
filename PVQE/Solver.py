@@ -1,5 +1,6 @@
 import pennylane as qml
-import pennylane.numpy as np
+import numpy as np
+#import pennylane.numpy as np
 import numpy.random as random
 
 import AnsatzGenerator, LocalObservables, OrdinaryVQE, InitialParameters, MaxMFGapSearch, QWCGrouping
@@ -137,7 +138,7 @@ class VQESolver():
         #     tilde_coeffs = np.sum(inner_products * nullspace_cols, axis=1)
         #     #tilde_coeffs = nullspace_cols @ np.linalg.inv(nullspace_cols.T @ nullspace_cols) @ nullspace_cols.T @ coeffs
         # else: ## M_is nonsingular
-
+        print(S)
         smallest_sv = S[-1]
         minspace_id = [id for id,v in enumerate(S) if v < smallest_sv + 1e-2]
         minspace_cols = V[:,minspace_id]
@@ -196,7 +197,7 @@ class VQESolver():
             ## Maximum Mean-Field Gap Search
             #coeffs_next, meanfield_gap, _ = MaxMFGapSearch.max_gap_search(self.num_qubits, self.pauli_terms, coeffs_curr, tilde_coeffs, self.coeffs)
             sampler = MaxMFGapSearch.Sampler(self.num_qubits, self.pauli_terms, coeffs_curr, tilde_coeffs, self.coeffs)
-            coeffs_next, meanfield_gap, _ = sampler.max_gap_search(num_samples=400)
+            coeffs_next, meanfield_gap, _ = sampler.max_gap_search(num_samples=100, dist_threshold=0.2, area_threshold=0.1)
             coeffs_next = coeffs_next
             
             print('Tilde coeffs:', tilde_coeffs)
@@ -241,47 +242,47 @@ class VQESolver():
 
 
 if __name__ == '__main__':
-    np.random.seed(10)
-    num_qubits = 8
-    num_layers = 3
-    full_basis = LocalObservables.get_k_local_basis(num_qubits, 3)
-    num_terms = len(full_basis) // 20
+    # np.random.seed(10)
+    # num_qubits = 4
+    # num_layers = 3
+    # full_basis = LocalObservables.get_k_local_basis(num_qubits, 3)
+    # num_terms = len(full_basis) // 10
 
-    coeffs = np.random.rand(num_terms)
-    coeffs = coeffs / np.linalg.norm(coeffs)
-    #coeffs = np.array([1,2,4,8])
-    #coeffs = coeffs / np.linalg.norm(coeffs)
+    # coeffs = np.random.rand(num_terms)
+    # coeffs = coeffs / np.linalg.norm(coeffs)
+    # #coeffs = np.array([1,2,4,8])
+    # #coeffs = coeffs / np.linalg.norm(coeffs)
 
-    pauli_strings = random.choice(full_basis, size=num_terms, replace=False)
-    #pauli_strings = ['XII', 'XIZ', 'YIX', 'ZZY']
-    print(pauli_strings)
-    pauli_terms = [qml.pauli.string_to_pauli_word(str(each)) for each in pauli_strings]
+    # pauli_strings = random.choice(full_basis, size=num_terms, replace=False)
+    # #pauli_strings = ['XII', 'XIZ', 'YIX', 'ZZY']
+    # print(pauli_strings)
+    # pauli_terms = [qml.pauli.string_to_pauli_word(str(each)) for each in pauli_strings]
 
-    start_ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':0}
-    ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':num_layers}
-    solver = VQESolver(num_qubits, pauli_strings, coeffs, ansatz_kwargs, start_ansatz_kwargs)
-    solver.solve(50)
+    # start_ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':0}
+    # ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':num_layers}
+    # solver = VQESolver(num_qubits, pauli_strings, coeffs, ansatz_kwargs, start_ansatz_kwargs)
+    # solver.solve(50)
 
     ## CHUA TEST CASE C(T) CACH XA C HON C~ CACH C.
 
-    # from pennylane import qchem
-    # symbols = ["H", "H"]
-    # coordinates = np.array([0.0, 0., 0.0, 0.0, 0.0, 5.5])
-    # H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates)
-
+    from pennylane import qchem
+    symbols = ["Li", "H"]
+    coordinates = np.array([0.0, 0., 0.0, 0.0, 0.0, 5.5])
+    H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates)
+    print(num_qubits)
     # symbols = ["H", "H", "H"]
     # R = 1.2
     # coordinates = np.array([[0, 0, 0], [0, 0, R/0.529], [0, 0, 2*R/0.529]])
     # H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates, charge=1)
 
-    # num_layers = 4
+    num_layers = 3
 
-    # coeffs = H.coeffs
-    # pauli_terms = H.ops
-    # wire_map = dict(zip(range(num_qubits), range(num_qubits)))
-    # pauli_strings = [qml.pauli.pauli_word_to_string(term,wire_map) for term in pauli_terms]
+    coeffs = H.coeffs
+    pauli_terms = H.ops
+    wire_map = dict(zip(range(num_qubits), range(num_qubits)))
+    pauli_strings = [qml.pauli.pauli_word_to_string(term,wire_map) for term in pauli_terms]
         
-    # start_ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':0}
-    # ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':num_layers}
-    # solver = VQESolver(num_qubits, pauli_strings, coeffs, ansatz_kwargs, start_ansatz_kwargs)
-    # record = solver.solve(50)
+    start_ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':0}
+    ansatz_kwargs = {'ansatz_gen':"SimpleAnsatz", 'num_qubits':num_qubits, 'num_layers':num_layers}
+    solver = VQESolver(num_qubits, pauli_strings, coeffs, ansatz_kwargs, start_ansatz_kwargs)
+    record = solver.solve(50)
