@@ -6,6 +6,8 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 import optax
+from joblib import Parallel, delayed
+import time
 
 
 import AnsatzGenerator
@@ -26,13 +28,11 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
     
     ansatz_obj = getattr(AnsatzGenerator,ansatz_gen)(num_qubits, num_layers)
     
-    @jax.jit
     @qml.qnode(dev, interface='jax')
     def cost_fn_H(theta):
         ansatz_obj.get_ansatz(theta)
         return qml.expval(H)
     
-    @jax.jit
     @qml.qnode(dev, interface='jax')
     def cost_fn_group(theta, group):
         #print(group)
@@ -40,19 +40,22 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
         return [qml.expval(o) for o in group]
     
     def cost_fn_groupings(theta):
-        cost = 0
-        # for i, group in enumerate(term_groups):
-        #     group_outcomes = cost_fn_group(theta, group)
-        #     cost += np.inner(coeff_groups[i],group_outcomes)
         group_outcomes = [jnp.array(cost_fn_group(theta, group)) for group in term_groups]
         outcomes = jnp.concatenate(group_outcomes)
-        #print(outcomes)
         return jnp.inner(outcomes, coeff_groups_flat)
+    
+    @jax.jit
+    def step(theta, opt_state):
+        prev_energy, grad_circuit = jax.value_and_grad(cost_fn)(theta)
+        updates, opt_state = opt.update(grad_circuit, opt_state)
+        theta = optax.apply_updates(theta, updates)
+        return theta, opt_state, prev_energy
     
     if isinstance(observable, qml.Hamiltonian):
         cost_fn = cost_fn_H
     else:
         cost_fn = cost_fn_groupings
+    
 
     if init_theta is None:
         theta = jnp.array(np.random.rand(ansatz_obj.num_parameters))
@@ -69,9 +72,10 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
 
     for n in range(maxiter):
         #theta, prev_energy = opt.step_and_cost(cost_fn, theta)
-        prev_energy, grad_circuit = jax.value_and_grad(cost_fn)(theta)
-        updates, opt_state = opt.update(grad_circuit, opt_state)
-        theta = optax.apply_updates(theta, updates)
+        # prev_energy, grad_circuit = jax.value_and_grad(cost_fn)(theta)
+        # updates, opt_state = opt.update(grad_circuit, opt_state)
+        # theta = optax.apply_updates(theta, updates)
+        theta, opt_state, prev_energy = step(theta, opt_state)
         
         history['energy'].append(cost_fn(theta))
         history['theta'].append(theta)
@@ -95,19 +99,30 @@ def get_meas_outcomes(term_groups, string_groups, ansatz_kwargs, theta, dev=None
 
     ansatz_obj = getattr(AnsatzGenerator,ansatz_gen)(num_qubits, num_layers)
 
-    @jax.jit
     @qml.qnode(dev, interface='jax')
     def circuit(theta, group=None):
         ansatz_obj.get_ansatz(theta)
         return [qml.expval(o) for o in group]
-    
-    #meas_outcomes = [circuit(theta, group) for group in term_groups]
+
     meas_dict = {}
     for id, group in enumerate(term_groups):
         outcomes = circuit(theta, group)
         meas_dict.update(zip(string_groups[id], outcomes))
 
-    #meas_dict = dict(zip(meas_strings, meas_outcomes))
+    # start = time.time()
+    # meas_dict = {}
+    # def measure(id, group):
+    #     outcomes = circuit(theta, group)
+    #     meas_dict.update(zip(string_groups[id], outcomes))
+    #     return 
+    
+    #meas_dict = dict([Parallel(n_jobs=8)(delayed(measure)(id, group) for id, group in enumerate(term_groups))])
+    #meas_outputs = Parallel(n_jobs=8)(delayed(measure)(id, group) for id, group in enumerate(term_groups))
+    # print(len(meas_outputs))
+
+    # for i in range(len(meas_outputs)):
+    #     meas_dict.update(zip(meas_outputs[i][0], meas_outputs[i][1]))
+    print(len(meas_dict))
     return meas_dict
 
 if __name__ == '__main__':

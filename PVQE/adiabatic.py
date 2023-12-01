@@ -3,6 +3,11 @@ import numpy as np
 import scipy
 import pennylane as qml
 from pennylane import qchem
+import jax
+import jax.numpy as jnp
+from joblib import Parallel, delayed
+import helper
+import matplotlib.pyplot as plt
 
 def path_function(time_points, coeffs_list):
     time_duration = len(coeffs_list) - 1
@@ -11,7 +16,7 @@ def path_function(time_points, coeffs_list):
         if s == time_duration:
             path_coeffs.append(coeffs_list[-1])
         else:
-            assert np.floor(s) >= 0 and np.floor(s)+1 <= time_duration
+            assert np.floor(s) >= 0 and s <= time_duration
             path_coeffs.append((1.-s%1)*coeffs_list[int(np.floor(s))] + (s%1)*coeffs_list[int(np.floor(s))+1])
     return path_coeffs
 
@@ -37,14 +42,25 @@ def simulate_discrete_adiabatic_process(ansatz_kwargs, theta, time_step, path_H,
     
     ansatz_obj = getattr(AnsatzGenerator,ansatz_gen)(num_qubits, num_layers)
     
-    @qml.qnode(dev, interface='autograd')
-    def circuit(theta):
+    @qml.qnode(dev, interface='jax')
+    def circuit(init_state, H, time_step):
+        qml.QubitStateVector(init_state, wires=0)
+        qml.evolve(H, time_step)
+        return qml.state(), qml.expval(H)
+
+    @qml.qnode(dev)
+    def init(theta):
         ansatz_obj.get_ansatz(theta)
-        for H_t in path_H:
-            qml.evolve(H_t, time_step)
-        return qml.expval(H_prob)
+        return qml.state()
     
-    return circuit(theta)
+    energy_record = []
+    init_state = init(theta)
+
+    for H in path_H:
+        init_state, energy = circuit(init_state, H, time_step)
+        energy_record.append(energy)
+
+    return energy_record
 
 
 # np.random.seed(10)
@@ -71,6 +87,7 @@ H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates)
 
 num_layers = 4
 coeffs = H.coeffs
+coeffs = coeffs / np.linalg.norm(coeffs)
 pauli_terms = H.ops
 wire_map = dict(zip(range(num_qubits), range(num_qubits)))
 pauli_strings = [qml.pauli.pauli_word_to_string(term,wire_map) for term in pauli_terms]
@@ -85,6 +102,11 @@ for t in range(len(record['H_list'])):
 time_step = 0.001
 coeffs_list = [each.coeffs for each in record['H_list']]
 path_H = discretize_evolution(coeffs_list, pauli_terms, time_step)
-discrete_energy = simulate_discrete_adiabatic_process(ansatz_kwargs, record['ground_theta'][0], time_step, path_H, H_prob=H)
-#print(f"VQE energy = {ground_energy}")
-print(f"Discrete Adiabatic Energy = {discrete_energy}")
+true_energies = [helper.true_ground_state_energy(H) for H in path_H]
+energy_record = simulate_discrete_adiabatic_process(ansatz_kwargs, record['ground_theta'][0], time_step, path_H, H_prob=H)
+diff = (np.array(energy_record) - np.array(true_energies))/np.array(true_energies)
+print(diff)
+print(len(diff))
+time_points = np.arange(0, len(coeffs_list)-1 + time_step, time_step)
+plt.plot(time_points, diff)
+plt.show()

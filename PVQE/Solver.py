@@ -58,13 +58,24 @@ class VQESolver():
         if len(self.extended_terms) <= 1000:
             self.extended_term_groups = qml.pauli.group_observables(self.extended_terms, grouping_type='qwc', method='rlf')
         else:
-            self.extended_term_groups = [[term] for term in self.extended_terms]
+            self.extended_term_groups = QWCGrouping.grouping_pauli_terms(pauli_terms=self.extended_terms, 
+                                                                         pauli_strings=self.extended_strings,
+                                                                         wire_map=self.wire_map,
+                                                                         random=True)
 
         self.extended_string_groups = [[qml.pauli.pauli_word_to_string(term, self.wire_map) for term in group] for group in self.extended_term_groups]
-        # for i,group in enumerate(self.extended_string_groups):
-        #     print(f'Group {i} has size {len(group)}')
-        #     print(self.extended_term_groups[i])
-        #     print(group)
+        # for i,string in enumerate(self.extended_strings):
+        #     if string == 'ZIIIIIIIII':
+        #         print(f'String {i} = ZIIIIIIIII')
+
+        print(f'Number of extended terms = {len(self.extended_strings)}')
+        result = sum(self.extended_string_groups, [])
+        print(f'Number of terms present in grouping = {len(set(result))}')
+
+        for i,group in enumerate(self.extended_string_groups):
+            print(f'Group {i} has size {len(group)}')
+            #print(self.extended_term_groups[i])
+            print(group)
 
 
 
@@ -169,7 +180,9 @@ class VQESolver():
 
                 # approx_ground_theta = self.theta_initializer.initialize(H_curr=H_t, theta_prev=ground_theta)
 
-                history = OrdinaryVQE.train_vqe((self.term_groups, coeff_group), self.ansatz_kwargs, init_theta = ground_theta)
+                #history = OrdinaryVQE.train_vqe((self.term_groups, coeff_group), self.ansatz_kwargs, init_theta = ground_theta)
+                history = OrdinaryVQE.train_vqe(H_t, self.ansatz_kwargs, init_theta = ground_theta)
+
                 # approx_history = OrdinaryVQE.train_vqe(H_t, self.ansatz_kwargs, approx_ground_theta)
                 # energy = history['energy'][-1]
                 # approx_energy = approx_history['energy'][-1]
@@ -243,10 +256,10 @@ class VQESolver():
 
 if __name__ == '__main__':
     # np.random.seed(10)
-    # num_qubits = 4
+    # num_qubits = 12
     # num_layers = 3
     # full_basis = LocalObservables.get_k_local_basis(num_qubits, 3)
-    # num_terms = len(full_basis) // 10
+    # num_terms = len(full_basis) // 12
 
     # coeffs = np.random.rand(num_terms)
     # coeffs = coeffs / np.linalg.norm(coeffs)
@@ -268,7 +281,9 @@ if __name__ == '__main__':
     from pennylane import qchem
     symbols = ["Li", "H"]
     coordinates = np.array([0.0, 0., 0.0, 0.0, 0.0, 5.5])
-    H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates)
+    #symbols = ["O", "H", "H"]
+    #coordinates = np.array([0.0, 0.0, 0.1173, 0.0, 0.7572, -0.4692, 0.0, -0.7572, -0.4692])
+    H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates)#, active_electrons=2, active_orbitals=5)
     print(num_qubits)
     # symbols = ["H", "H", "H"]
     # R = 1.2
@@ -278,6 +293,7 @@ if __name__ == '__main__':
     num_layers = 3
 
     coeffs = H.coeffs
+    coeffs = coeffs / np.linalg.norm(coeffs)
     pauli_terms = H.ops
     wire_map = dict(zip(range(num_qubits), range(num_qubits)))
     pauli_strings = [qml.pauli.pauli_word_to_string(term,wire_map) for term in pauli_terms]

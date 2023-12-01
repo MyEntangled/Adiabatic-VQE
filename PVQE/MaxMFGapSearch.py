@@ -19,41 +19,6 @@ class Sampler:
         width, height = sizes
         self.area = width * height
 
-        # ## Variables named conditioned on x below the line yz.
-        # self.m = self.y + ((self.x-self.y) @ (self.z-self.y)) * (self.z-self.y)/self.d3**2
-        # self.anchor_bot = self.x
-        # self.anchor_top = 2*self.m -self.x
-        # self.anchor_left = self.z + (self.d2/self.d3) * (self.y-self.z)
-        # self.anchor_right = self.y + (self.d1/self.d3) * (self.z-self.y)
-        
-        # self.unit_east = self.anchor_right - self.anchor_left
-        # if np.linalg.norm(self.unit_east) < 1e-6:
-        #     self.unit_east = (self.z - self.y)/self.d3
-        # else:
-        #     self.unit_east = self.unit_east / np.linalg.norm(self.unit_east)
-
-        # self.unit_north = self.anchor_top - self.anchor_bot
-        # if np.linalg.norm(self.unit_north) < 1e-6:
-        #     random = np.random.rand(self.unit_east.shape[0])
-        #     self.unit_north = random - (random @ self.unit_east) * self.unit_east
-        #     self.unit_north = self.unit_north / np.linalg.norm(self.unit_north)
-        # else:
-        #     self.unit_north = self.unit_north / np.linalg.norm(self.unit_north)
-
-        # self.far_top = self.y + self.d1*self.unit_north
-        # self.far_bot = self.y - self.d1*self.unit_north
-
-        # if np.linalg.norm(self.far_top - self.z) < self.d2:
-        #     self.anchor_top = self.far_top
-        #     self.anchor_bot = self.far_bot
-        #     self.height = 2 * self.d1
-        # else:
-        #     self.height = np.linalg.norm(self.anchor_top - self.anchor_bot)
-
-        # self.width = np.linalg.norm(self.anchor_left - self.anchor_right)
-        # self.area = self.width * self.height
-    
-
     def max_gap_search(self, num_samples, dist_threshold=0.1, area_threshold=0.1):
         if self.d3 <= self.d1:
             print('Final sampling')
@@ -172,7 +137,7 @@ class Sampler:
             def compute_sample(i):
                 return bot_left + ax1[i]*width * unit_east + ax2[i]*height * unit_north
 
-            return np.array(Parallel(n_jobs=4)(delayed(compute_sample)(i) for i in range(num_samples)))
+            return np.array(Parallel(n_jobs=8)(delayed(compute_sample)(i) for i in range(num_samples)))
 
         def accept(samples):
             is_in_ball_1 = np.linalg.norm(samples - c1, axis=1) <= r1
