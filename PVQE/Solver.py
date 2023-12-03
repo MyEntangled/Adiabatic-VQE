@@ -3,8 +3,7 @@ import numpy as np
 #import pennylane.numpy as np
 import numpy.random as random
 
-import AnsatzGenerator, LocalObservables, OrdinaryVQE, InitialParameters, MaxMFGapSearch, QWCGrouping
-import helper
+from PVQE import AnsatzGenerator, LocalObservables, OrdinaryVQE, InitialParameters, MaxMFGapSearch, QWCGrouping, helper
 
 class VQESolver():
     def __init__(self, num_qubits, pauli_strings, coeffs, ansatz_kwargs, start_ansatz_kwargs) -> None:
@@ -15,7 +14,9 @@ class VQESolver():
         ## Problem Hamiltonian
         self.pauli_strings = pauli_strings
         self.pauli_terms = [qml.pauli.string_to_pauli_word(str(each)) for each in pauli_strings]
-        self.coeffs = coeffs
+
+        self.coeffs_norm = np.linalg.norm(coeffs)
+        self.coeffs = coeffs / self.coeffs_norm
 
         self.num_terms = len(self.pauli_strings)
         assert self.num_terms == len(self.pauli_terms)
@@ -69,15 +70,10 @@ class VQESolver():
         #         print(f'String {i} = ZIIIIIIIII')
 
         print(f'Number of extended terms = {len(self.extended_strings)}')
-        result = sum(self.extended_string_groups, [])
-        print(f'Number of terms present in grouping = {len(set(result))}')
 
-        for i,group in enumerate(self.extended_string_groups):
-            print(f'Group {i} has size {len(group)}')
-            #print(self.extended_term_groups[i])
-            print(group)
-
-
+        # for i,group in enumerate(self.extended_string_groups):
+        #     print(f'Group {i} has size {len(group)}')
+        #     print(group)
 
     def qwc_grouping_structure(self):
         grouping_to_list_map = []
@@ -125,31 +121,10 @@ class VQESolver():
 
         M = LocalObservables.compute_M(meas_dict, self.pauli_strings, self.prod_strings, self.prod_coeffs)
 
-        # eigvals, eigvecs = np.linalg.eigh(M)
-        # nullspace_id = [id for id,v in enumerate(eigvals) if v < 1e-6]
-
-        # if len(nullspace_id) > 0: ## M is singular
-        #     nullspace_cols = eigvecs[:,nullspace_id]
-        #     inner_products = coeffs @ nullspace_cols
-        #     tilde_coeffs = np.sum(inner_products * nullspace_cols, axis=1)
-        # else: ## M_is nonsingular
-        #     smallest_eigval = eigvals[0]
-        #     subspace_id = [id for id,v in enumerate(eigvals) if v < smallest_eigval+1e-6]
-        #     subspace_cols = eigvecs[:,subspace_id]
-        #     inner_products = coeffs @ subspace_cols
-        #     tilde_coeffs = np.sum(inner_products * subspace_cols, axis=1)
-
         U, S, Vt = np.linalg.svd(M, full_matrices=True, compute_uv=True, hermitian=True)
         V = Vt.T
-        #nullspace_id = [id for id,v in enumerate(S) if v < 1e-2]
 
-        # if len(nullspace_id) > 0: ## M is singular
-        #     nullspace_cols = V[:,nullspace_id]
-        #     inner_products = coeffs @ nullspace_cols
-        #     tilde_coeffs = np.sum(inner_products * nullspace_cols, axis=1)
-        #     #tilde_coeffs = nullspace_cols @ np.linalg.inv(nullspace_cols.T @ nullspace_cols) @ nullspace_cols.T @ coeffs
-        # else: ## M_is nonsingular
-        print(S)
+        #print(S)
         smallest_sv = S[-1]
         minspace_id = [id for id,v in enumerate(S) if v < smallest_sv + 1e-2]
         minspace_cols = V[:,minspace_id]
@@ -161,13 +136,17 @@ class VQESolver():
     
     def solve(self, max_iters):
         ## Iterates...
-        coeffs_next = self.H0.coeffs
-        record = {'H_list':[], 'ground_energy':[], 'ground_theta':[]}
+        
+        true_ge, true_fe = helper.true_ground_state_energy(self.H)
+        true_ge *= self.coeffs_norm
+        true_fe *= self.coeffs_norm
+        record = {'H_prob': self.H*self.coeffs_norm, 'true_ge': true_ge, 'H_list':[], 'ground_energy':[], 'ground_theta':[], 'vqe_error':[]}
 
+        coeffs_next = self.H0.coeffs
         for t in range(max_iters):
             print('Iteration: ', t+1)
             coeffs_curr = coeffs_next
-            print("Current coeffs:", coeffs_curr[:5])
+            #print("Current coeffs:", coeffs_curr[:5])
             if t == 0:
                 H_t = self.H0
                 history = OrdinaryVQE.train_vqe(H_t, self.ansatz_kwargs, stepsize=0.1)
@@ -201,24 +180,27 @@ class VQESolver():
                 ground_theta = history['theta'][-1]
 
             ## Genuine Hamiltonian
+            ground_energy *= self.coeffs_norm
             print('End of VQE')
             M_t, tilde_coeffs = self.get_genuine_hamiltonian(theta = ground_theta, coeffs = coeffs_curr)
             #tilde_coeffs = tilde_coeffs * (np.inner(coeffs_curr, tilde_coeffs) / np.linalg.norm(tilde_coeffs)**2)
 
-
             #print('Correlation', M_t)
             ## Maximum Mean-Field Gap Search
-            #coeffs_next, meanfield_gap, _ = MaxMFGapSearch.max_gap_search(self.num_qubits, self.pauli_terms, coeffs_curr, tilde_coeffs, self.coeffs)
             sampler = MaxMFGapSearch.Sampler(self.num_qubits, self.pauli_terms, coeffs_curr, tilde_coeffs, self.coeffs)
             coeffs_next, meanfield_gap, _ = sampler.max_gap_search(num_samples=100, dist_threshold=0.2, area_threshold=0.1)
             coeffs_next = coeffs_next
             
-            print('Tilde coeffs:', tilde_coeffs)
+            #print('Tilde coeffs:', tilde_coeffs)
             true_ge, true_fe = helper.true_ground_state_energy(H_t)
-            anchor_ge, anchor_fe = helper.true_ground_state_energy(qml.Hamiltonian(tilde_coeffs, self.pauli_terms))
+            true_ge *= self.coeffs_norm
+            true_fe *= self.coeffs_norm
+
+            #anchor_ge, anchor_fe = helper.true_ground_state_energy(qml.Hamiltonian(tilde_coeffs, self.pauli_terms))
+
             print('True Energies: ', true_ge, true_fe)
             print('Est Ground Energy: ', ground_energy)
-            print('Anchor Energies', anchor_ge, anchor_fe)
+            #print('Anchor Energies', anchor_ge * self.coeffs_norm, anchor_fe * self.coeffs_norm)
 
 
             vqe_error = ground_energy - true_ge
@@ -231,13 +213,11 @@ class VQESolver():
             curr_to_next = np.linalg.norm(coeffs_next - coeffs_curr)
 
             ## Update record
-            # training_record['dist-to-H'].append(diff_to_H)
-            # training_record['dist-to-prev'].append(diff_to_prev)
-            record['H_list'].append(H_t)
+            record['H_list'].append(H_t * self.coeffs_norm)
             record['ground_theta'].append(ground_theta)
             record['ground_energy'].append(ground_energy)
+            record['vqe_error'].append(vqe_error)
             
-            #print('next c', coeffs_next)
             print('MF gap H(t+1):', meanfield_gap)
             print('Null-space deviation:', np.linalg.norm(M_t @ tilde_coeffs))
             print('VQE optimality:', np.linalg.norm(M_t @ coeffs_curr))
@@ -283,7 +263,7 @@ if __name__ == '__main__':
     coordinates = np.array([0.0, 0., 0.0, 0.0, 0.0, 5.5])
     #symbols = ["O", "H", "H"]
     #coordinates = np.array([0.0, 0.0, 0.1173, 0.0, 0.7572, -0.4692, 0.0, -0.7572, -0.4692])
-    H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates)#, active_electrons=2, active_orbitals=5)
+    H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates, active_electrons=2, active_orbitals=4)
     print(num_qubits)
     # symbols = ["H", "H", "H"]
     # R = 1.2
@@ -293,7 +273,6 @@ if __name__ == '__main__':
     num_layers = 3
 
     coeffs = H.coeffs
-    coeffs = coeffs / np.linalg.norm(coeffs)
     pauli_terms = H.ops
     wire_map = dict(zip(range(num_qubits), range(num_qubits)))
     pauli_strings = [qml.pauli.pauli_word_to_string(term,wire_map) for term in pauli_terms]

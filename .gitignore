@@ -1,4 +1,12 @@
+.ipynb
 .ipynb_checkpoints
-dccp.log
-QIRO_MIS
-QIRO_MIS.zip
+.log
+.pdf
+.zip
+.vscode
+.DS_Store
+.vscode
+.DS_Store
+PVQE/__pycache__/
+PVQE/.Ds_Store
+results/wrong bondlengths

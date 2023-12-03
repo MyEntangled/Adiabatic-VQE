@@ -4,7 +4,7 @@ import numpy as np
 import networkx as nx
 import warnings
 import matplotlib.pyplot as plt
-import LocalObservables
+from . import LocalObservables
 import random
 
 def extend_group(pauli_term, other_terms, other_strings=None, wire_map=None):

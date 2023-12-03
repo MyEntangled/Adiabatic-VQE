@@ -1,16 +1,12 @@
-import sys
 import pennylane as qml
 import numpy as np
-#from pennylane import numpy as np
 import jax
 import jax.numpy as jnp
-from functools import partial
 import optax
 from joblib import Parallel, delayed
-import time
 
 
-import AnsatzGenerator
+from PVQE import AnsatzGenerator
 
 def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.01, maxiter=300, tol=1e-6):
     num_qubits = ansatz_kwargs['num_qubits']
@@ -71,10 +67,6 @@ def train_vqe(observable, ansatz_kwargs, init_theta=None, dev=None, stepsize=0.0
     opt_state = opt.init(theta)
 
     for n in range(maxiter):
-        #theta, prev_energy = opt.step_and_cost(cost_fn, theta)
-        # prev_energy, grad_circuit = jax.value_and_grad(cost_fn)(theta)
-        # updates, opt_state = opt.update(grad_circuit, opt_state)
-        # theta = optax.apply_updates(theta, updates)
         theta, opt_state, prev_energy = step(theta, opt_state)
         
         history['energy'].append(cost_fn(theta))
@@ -109,20 +101,6 @@ def get_meas_outcomes(term_groups, string_groups, ansatz_kwargs, theta, dev=None
         outcomes = circuit(theta, group)
         meas_dict.update(zip(string_groups[id], outcomes))
 
-    # start = time.time()
-    # meas_dict = {}
-    # def measure(id, group):
-    #     outcomes = circuit(theta, group)
-    #     meas_dict.update(zip(string_groups[id], outcomes))
-    #     return 
-    
-    #meas_dict = dict([Parallel(n_jobs=8)(delayed(measure)(id, group) for id, group in enumerate(term_groups))])
-    #meas_outputs = Parallel(n_jobs=8)(delayed(measure)(id, group) for id, group in enumerate(term_groups))
-    # print(len(meas_outputs))
-
-    # for i in range(len(meas_outputs)):
-    #     meas_dict.update(zip(meas_outputs[i][0], meas_outputs[i][1]))
-    print(len(meas_dict))
     return meas_dict
 
 if __name__ == '__main__':

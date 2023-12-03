@@ -1,7 +1,7 @@
 import pennylane as qml
 import pennylane.numpy as np
 
-import AnsatzGenerator
+from PVQE import AnsatzGenerator
 
 import itertools
 import sys

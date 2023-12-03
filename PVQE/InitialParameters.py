@@ -1,7 +1,7 @@
 import pennylane as qml
 import pennylane.numpy as np
 
-import AnsatzGenerator
+from PVQE import AnsatzGenerator
 
 class VQEApproximator:
     def __init__(self, num_qubits, num_layers, ansatz_gen, dev=None) -> None:

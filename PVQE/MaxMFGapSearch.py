@@ -1,6 +1,6 @@
 import numpy as np
 import pennylane as qml
-import MeanFieldGap
+from . import MeanFieldGap
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 
@@ -21,17 +21,15 @@ class Sampler:
 
     def max_gap_search(self, num_samples, dist_threshold=0.1, area_threshold=0.1):
         if self.d3 <= self.d1:
-            print('Final sampling')
+            ## Jump to final Hamiltonian
+            #print('Final sampling')
             H = qml.Hamiltonian(self.z, self.pauli_terms)
             mf_gap = MeanFieldGap.meanfield_spectral_gap(self.num_qubits, H)
             return self.z, mf_gap, np.array([self.z])
         elif self.d1 <= dist_threshold:
-            # u1 = self.x + (self.z-self.x)/15
-            # u2 = self.x + (self.z-self.x)/5
-            # samples = self.segment_sampling(u1,u2,num_samples,use_grid=False)
-            # print('Segment')
             if self.d2 <= dist_threshold:
-                print('Final sampling')
+                ## Jump to final Hamiltonian
+                #print('Final sampling')
                 H = qml.Hamiltonian(self.z, self.pauli_terms)
                 mf_gap = MeanFieldGap.meanfield_spectral_gap(self.num_qubits, H)
                 return self.z, mf_gap, np.array([self.z])
@@ -41,8 +39,10 @@ class Sampler:
                 # start_theta = np.arcsin(self.height/(2*self.d2)) - np.pi/2
                 # end_theta = start_theta + np.pi
                 # samples = self.disk_sampling(self.x, Rm, RM, start_theta, end_theta, num_samples)
-                samples = self.intersection_sampling(num_samples, self.x, dist_threshold, self.z, self.d2, self.y, self.x, dist_threshold/3)
+
                 print('Direct sampling')
+                samples = self.intersection_sampling(num_samples, self.x, dist_threshold, self.z, self.d2, self.y, self.x, dist_threshold/2.)
+                
         elif self.area <= area_threshold:
             # sampling in the disk (x,|x-y|)
             # RM = self.d1
@@ -50,11 +50,14 @@ class Sampler:
             # start_theta = np.arcsin(self.height/(2*self.d2)) - np.pi/2
             # end_theta = start_theta + np.pi
             # samples = self.disk_sampling(self.x, Rm, RM, start_theta, end_theta, num_samples)
-            samples = self.intersection_sampling(num_samples, self.x, self.d1, self.z, self.d2, self.y, self.x, self.d1/3)
+
             print('Disk')
+            ## Error 1/(2*d) * np.sqrt((4*d**2*r2**2) - (d**2-r1**2+r2**2)**2)
+            samples = self.intersection_sampling(num_samples, self.x, self.d1, self.z, self.d2, self.y, self.x, self.d1/2.)
+            
         else:
-            samples = self.intersection_sampling(num_samples, self.y, self.d1, self.z, self.d2, self.x, self.x, self.d1/3, 'full')
             print('Intersection')
+            samples = self.intersection_sampling(num_samples, self.y, self.d1, self.z, self.d2, self.x, self.x, self.d1/2., 'full')
         
         samples_gap = []
         for i in range(len(samples)):
@@ -82,6 +85,7 @@ class Sampler:
         unit_north = dir - (dir @ unit_east) * unit_east
         unit_north = unit_north / np.linalg.norm(unit_north)
 
+        #print((4*d**2*r2**2) - (d**2-r1**2+r2**2)**2)
         intersect_r = 1/(2*d) * np.sqrt((4*d**2*r2**2) - (d**2-r1**2+r2**2)**2)
         a1 = np.sqrt(r1**2 - intersect_r**2)
         m = c1 + a1 * unit_east
@@ -159,48 +163,6 @@ class Sampler:
             out[reject[mask]] = fill[mask]
             reject = reject[~mask]
         return out
-
-
-    # def intersection_sampling(self, num_samples, region = 'full'):
-    #     def sample(bot_left, width, height, N):
-    #         ax1 = np.random.rand(N)
-    #         ax2 = np.random.rand(N)
-    #         #return bot_left + np.outer(ax1,self.unit_east) + np.outer(ax2,self.unit_north)
-    #         return np.array([bot_left + ax1[i]*width * self.unit_east + ax2[i]*height * self.unit_north for i in range(N)])
-
-    #     def accept(samples):
-    #         is_in_y_disk = np.linalg.norm(samples - self.y, axis=1) < self.d1 
-    #         is_in_z_disk = np.linalg.norm(samples - self.z, axis=1) < self.d2
-    #         is_in_intersection = np.logical_and(is_in_y_disk, is_in_z_disk)
-    #         return is_in_intersection
-        
-    #     if region == 'full':
-    #         top_left = self.anchor_left + (self.height/2)*self.unit_north
-    #         bot_left = self.anchor_left - (self.height/2)*self.unit_north
-    #         top_right = self.anchor_right + (self.height/2)*self.unit_north
-    #         bot_right = self.anchor_right - (self.height/2)*self.unit_north
-    #         area = self.area
-    #         height = self.height
-    #         width = self.width
-            
-    #     elif region == 'half':
-    #         top_left = self.anchor_left + (self.height/2)*self.unit_north
-    #         bot_left = self.anchor_left
-    #         top_right = self.anchor_right + (self.height/2)*self.unit_north
-    #         bot_right = self.anchor_right
-    #         area = self.area/2.
-    #         height = self.height/2
-    #         width = self.width
-
-    #     out = sample(bot_left, width, height, num_samples)
-    #     mask = accept(out)
-    #     reject, = np.where(~mask)
-    #     while reject.size > 0:
-    #         fill = sample(bot_left, width, height, reject.size)
-    #         mask = accept(fill)
-    #         out[reject[mask]] = fill[mask]
-    #         reject = reject[~mask]
-    #     return out
         
 
     def disk_sampling(self, origin, Rm, RM, start_theta, end_theta, num_samples):
@@ -224,77 +186,72 @@ class Sampler:
         samples = [s[i] * u1 + (1-s[i]) * u2 for i in range(num_samples)] 
         return np.array(samples)
     
-def max_gap_search(num_qubits, pauli_terms, coeffs_t, tilde_coeffs_t, coeffs, use_grid=True):
-    x = coeffs_t
-    y = tilde_coeffs_t
-    z = coeffs
-    d1 = np.linalg.norm(x-y)
-    d2 = np.linalg.norm(x-z)
-    d3 = np.linalg.norm(y-z)
+# def max_gap_search(num_qubits, pauli_terms, coeffs_t, tilde_coeffs_t, coeffs, use_grid=True):
+#     x = coeffs_t
+#     y = tilde_coeffs_t
+#     z = coeffs
+#     d1 = np.linalg.norm(x-y)
+#     d2 = np.linalg.norm(x-z)
+#     d3 = np.linalg.norm(y-z)
 
-    if np.linalg.norm(y-x) < 1e-1:
-        ## direct sampling
-        print('Sampling type 1')
-        u1 = x + (z-x)/15
-        u2 = x + (z-x)/5
-        samples = segment_sampling(u1,u2,num_samples=10,use_grid=True)
-    else:
-        print('Sampling type 2')
-        m = y + ((x-y) @ (z-y)) * (z-y)/d3**2
-        #u1 = 2*m - x
-        u1 = m + (m-x)/2
-        #u2 = y + (d1/d3) * (z-y)
-        u2 = m
-        v3 = z + (d2/d3) * (y-z)
-        u3 = (m+v3)/2.
-        samples = triangle_sampling(u1,u2,u3,num_samples_per_dim=10,use_grid=True)
+#     if np.linalg.norm(y-x) < 1e-1:
+#         ## direct sampling
+#         print('Sampling type 1')
+#         u1 = x + (z-x)/15
+#         u2 = x + (z-x)/5
+#         samples = segment_sampling(u1,u2,num_samples=10,use_grid=True)
+#     else:
+#         print('Sampling type 2')
+#         m = y + ((x-y) @ (z-y)) * (z-y)/d3**2
+#         #u1 = 2*m - x
+#         u1 = m + (m-x)/2
+#         #u2 = y + (d1/d3) * (z-y)
+#         u2 = m
+#         v3 = z + (d2/d3) * (y-z)
+#         u3 = (m+v3)/2.
+#         samples = triangle_sampling(u1,u2,u3,num_samples_per_dim=10,use_grid=True)
 
-    if use_grid:
-        samples = np.unique(samples, axis=0)
+#     if use_grid:
+#         samples = np.unique(samples, axis=0)
 
-    samples_gap = []
-    for i in range(len(samples)):
-        H = qml.Hamiltonian(samples[i], pauli_terms)
-        samples_gap.append(MeanFieldGap.meanfield_spectral_gap(num_qubits, H))
+#     samples_gap = []
+#     for i in range(len(samples)):
+#         H = qml.Hamiltonian(samples[i], pauli_terms)
+#         samples_gap.append(MeanFieldGap.meanfield_spectral_gap(num_qubits, H))
 
-    max_gap_id = np.argmax(samples_gap)
-    assert np.linalg.norm(samples[max_gap_id] - coeffs) <= d2 + 1e-6
-    return samples[max_gap_id], samples_gap[max_gap_id], np.array(samples)
+#     max_gap_id = np.argmax(samples_gap)
+#     assert np.linalg.norm(samples[max_gap_id] - coeffs) <= d2 + 1e-6
+#     return samples[max_gap_id], samples_gap[max_gap_id], np.array(samples)
 
-def triangle_sampling(u1, u2, u3, num_samples_per_dim, use_grid=False):
-    # Shift coordinate u1 to 0
-    v2 = u2 - u1
-    v3 = u3 - u1
-    samples = []
+# def triangle_sampling(u1, u2, u3, num_samples_per_dim, use_grid=False):
+#     # Shift coordinate u1 to 0
+#     v2 = u2 - u1
+#     v3 = u3 - u1
+#     samples = []
 
-    if use_grid:
-        s = np.linspace(0,1,num_samples_per_dim)
-        t = np.linspace(0,1,num_samples_per_dim)
-    else:
-        s = np.random.rand(num_samples_per_dim)
-        t = np.random.rand(num_samples_per_dim)
+#     if use_grid:
+#         s = np.linspace(0,1,num_samples_per_dim)
+#         t = np.linspace(0,1,num_samples_per_dim)
+#     else:
+#         s = np.random.rand(num_samples_per_dim)
+#         t = np.random.rand(num_samples_per_dim)
 
-    ss, tt = np.meshgrid(s, t)
-    st = np.vstack([ss.ravel(), tt.ravel()]) # dim = 2 x num_samples
-    in_triangle = (np.sum(st, axis=0) <= 1)
-    samples = [st[0,i]*v2 + st[1,i]*v3 if in_triangle[i] else (1-st[0,i])*v2 + (1-st[1,i])*v3 for i in range(len(in_triangle))]
-    samples = u1 + np.array(samples)
+#     ss, tt = np.meshgrid(s, t)
+#     st = np.vstack([ss.ravel(), tt.ravel()]) # dim = 2 x num_samples
+#     in_triangle = (np.sum(st, axis=0) <= 1)
+#     samples = [st[0,i]*v2 + st[1,i]*v3 if in_triangle[i] else (1-st[0,i])*v2 + (1-st[1,i])*v3 for i in range(len(in_triangle))]
+#     samples = u1 + np.array(samples)
 
-    # for _ in range(num_samples):
-    #     s,t = np.random.rand(2)
-    #     in_triangle = (s + t <= 1)
-    #     p = s * v2 + t * v3 if in_triangle else (1 - s) * v2 + (1 - t) * v3 
-    #     samples.append(u1+p)
-    return samples
+#     return samples
 
-def segment_sampling(u1, u2, num_samples, use_grid=False):
-    if use_grid:
-        s = np.linspace(0,1,num_samples)
-    else:
-        s = np.random.rand(num_samples)
+# def segment_sampling(u1, u2, num_samples, use_grid=False):
+#     if use_grid:
+#         s = np.linspace(0,1,num_samples)
+#     else:
+#         s = np.random.rand(num_samples)
 
-    samples = [s[i] * u1 + (1-s[i]) * u2 for i in range(num_samples)] 
-    return samples
+#     samples = [s[i] * u1 + (1-s[i]) * u2 for i in range(num_samples)] 
+#     return samples
 
 
 if __name__ == '__main__':
