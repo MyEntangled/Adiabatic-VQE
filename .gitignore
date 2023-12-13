@@ -11,3 +11,5 @@
 PVQE/__pycache__/
 PVQE/.Ds_Store
 results/wrong bondlengths
+.ipynb_checkpoints
+.ipynb
