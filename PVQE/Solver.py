@@ -270,7 +270,7 @@ if __name__ == '__main__':
     # coordinates = np.array([[0, 0, 0], [0, 0, R/0.529], [0, 0, 2*R/0.529]])
     # H, num_qubits = qchem.molecular_hamiltonian(symbols, coordinates, charge=1)
 
-    num_layers = 3
+    num_layers = 4
 
     coeffs = H.coeffs
     pauli_terms = H.ops
